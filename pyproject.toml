@@ -5,7 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.8.13"
 dependencies = [
+    "keyboard>=0.13.5",
     "numpy>=1.24.4",
+    "pygame>=2.6.1",
     "reactivex>=4.0.4",
     "requests>=2.32.3",
 ]

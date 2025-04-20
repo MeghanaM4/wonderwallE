@@ -3,13 +3,26 @@ import time
 import requests
 import json
 import numpy as np
-# import pygame
+import pygame
+
+pygame.display.init()
+pygame.display.set_mode((640,480))
 
 # Configurations
 PI_IP: str = "127.0.0.1"
 PI_PORT: int = 8020
 NUMBER_OF_STEPS: int = 10
 NUMBER_OF_CIRCLES: int = 15
+
+# import keyboard
+_r = 0
+
+def on_r_press(event):
+    _r = record(3)
+
+
+def on_p_press(event):
+    playback(_r)
 
 
 # Function to call the API
@@ -34,6 +47,7 @@ def pretty_print_joints():
         try:
             joints = get_joints()
             print(', '.join([f"{i+1}:{j=:0.2f}" for i,j in enumerate(joints)]))
+            print(', '.join([f"{j=:0.2f}" for i,j in enumerate(joints)]))
         except:
             pass
 
@@ -41,19 +55,33 @@ def toggle_torque(enable=True):
     api_post("/torque/toggle", data={'torque_status': enable})
 
 FREQ = 120
+LOOP = np.array([])
 
 def record(rec_time=3, freq=FREQ) -> np.ndarray:
+    global RECORDING
+    global LOOP
+    RECORDING = True
     ret = []
     t = t_start = time.time()
     toggle_torque(False)
-    while t-t_start < rec_time:
-        timestamp = t-t_start
-        joint_angles = [timestamp]+get_joints()
-        ret.append(joint_angles)
-        time.sleep(1/freq)
-        t = time.time()
+    # while t-t_start < rec_time:
+    try:
+        while RECORDING:
+            print("RECORDING")
+            timestamp = t-t_start
+            joint_angles = [timestamp]+get_joints()
+            ret.append(joint_angles)
+            time.sleep(1/freq)
+            t = time.time()
+    except KeyboardInterrupt:
+        
+        pass
+    LOOP = np.array(ret)
+    playback(LOOP)
 
     return np.array(ret)
+
+re = record
 
 import reactivex
 from reactivex import operators as ops
@@ -62,12 +90,28 @@ def playback(sequence: np.ndarray, skip=2):
     t = t_start = time.time()
     toggle_torque(True)
 
-    rx = reactivex.from_iterable(sequence).pipe(
-        ops.delay_with_mapper(lambda frame: reactivex.timer(frame[0])),
-        ops.map(lambda frame: \
-            api_post("/joints/write", data={"angles": list(frame[1:]), "joints_ids": [1,2,3,4,5,6], "unit": "rad"})
-        ),
-    ).subscribe(print)
+    try:
+        # rx = reactivex.from_iterable(sequence[::skip]).pipe(
+        rx = reactivex.from_iterable(sequence).pipe(
+            # ops.delay_with_mapper(lambda frame: reactivex.timer(frame[0]*0.5)),
+            ops.delay_with_mapper(lambda frame: reactivex.timer(frame[0])),
+            ops.map(lambda frame: \
+                api_post("/joints/write", data={"angles": list(frame[1:4])+[np.interp(frame[1], (-0.7, 0.7), (0, -0.4)), np.interp(frame[1], (-0.7, 0.7), (0, -1.5)), np.interp(frame[1], (-0.7,0.7), (1.3, -0.3))], "joints_ids": [1,2,3,4,5,6], "unit": "rad"})
+            ),
+            ops.repeat()
+        ).subscribe(print)
+    except KeyboardInterrupt:
+        pass
+
+
+"""_summary_
+
+1: +/- 0.7
+6: 0.96 -0.2
+
+:return: _description_
+:yield: _description_
+"""
 
 import csv
 import vlc
@@ -80,8 +124,10 @@ def play_csv(csv_path):
 
     # with open(csv_path, newline='') as _file:
     #     seq = csv.reader(csv_path)
-    seq = np.expand_dims(np.genfromtxt(csv_path),axis=1)
+    # seq = np.expand_dims(np.genfromtxt(csv_path),axis=1)
     seq = np.genfromtxt(csv_path)
+    seq = np.expand_dims(seq, axis=1)
+    # seq = seq[::2]
 
     print(seq)
 
@@ -90,21 +136,27 @@ def play_csv(csv_path):
         
     # next_bob = meta_bob_sequence()
     def _emit(x):
+        print("_emit", x)
         for _x in meta_bob_sequence():
             _bob(compose(_x))
 
             
-    # rx = reactivex.from_iterable(seq)
-    rx = reactivex.zip(reactivex.from_iterable(seq), reactivex.from_iterable(BOBS))
+    rx = reactivex.from_iterable(seq)
+    # rx = reactivex.zip(reactivex.from_iterable(seq), reactivex.from_iterable(BOBS))
+
         
-    rx = rx.pipe(
-        ops.delay_with_mapper(lambda frame: reactivex.timer(frame[0])),
-        ops.map(lambda x: x[1]),
+    rx.pipe(
+        ops.delay_with_mapper(lambda frame: reactivex.timer(frame[0]-0.05)),
+        # ops.map(lambda x: x[1]),
         # ops.map(meta_bob_sequence),
         # ops.map(compose)
         # ops.map(lambda frame: api_post("/joints/write", data={"angles": [1.2], "joints_ids": [6], "unit": "rad"}))
+        # ops.map(compose)
+        # ops.map(_emit),
     ).subscribe(
-        lambda x: _bob(compose(x))
+        # _emit
+        __bob,
+        # lambda x: _bob(
         # lambda x: _bob(compose(x))
         # print
         # bob
@@ -135,12 +187,14 @@ def _bob(x: tuple):
     
 
 def __bob(*args, **kwargs):
+    down_cmd = [3.1, 1.0]
 
-    api_post("/joints/write", data={"angles": [-0.36], "joints_ids": [4], "unit": "rad"})
+    api_post("/joints/write", data={"angles": [3.1, 1.0], "joints_ids": [ 2, 3], "unit": "rad"})
     time.sleep(0.1)
 
-    api_post("/joints/write", data={"angles": [-1.17], "joints_ids": [4], "unit": "rad"})
+    api_post("/joints/write", data={"angles": [2.5, 2.2], "joints_ids": [2,3], "unit": "rad"})
     # await asyncio.sleep(0.1)
+
 
 
 from functools import partial
@@ -173,22 +227,55 @@ toggle_torque(False)
 import copy
 
 def compose(poses: str):
-    pose_a = POSE_DEFAULT
-    pose_b = POSE_DEFAULT
+    print(f"Poses: {poses=}")
+    pose_a = copy.copy(POSE_DEFAULT)
+    pose_b = copy.copy(POSE_DEFAULT)
+    print(f"{poses=}")
     for pose in poses:
         # print(f"{pose=}")
         _pose_a = copy.copy(POSES[f"{pose}a"])
         _pose_b = copy.copy(POSES[f"{pose}b"])
+        print(f"{_pose_a=}, {_pose_b}")
         for i,p in enumerate(_pose_a):
             if p is not None:
                 pose_a[i] = _pose_a[i]
         for i,p in enumerate(_pose_b):
             if p is not None:
                 pose_b[i] = _pose_b[i]
-    print(pose_a, pose_b)
     return pose_a, pose_b
 
+RECORDING = False
+LOOPING = False
         
+# keyboard.on_press_key("p", on_r_press)
+# keyboard.on_press_key("r", on_r_press)
+
+import threading
+from threading import Thread
+
+# def _thread():
+# while True:
+if False:
+    events = pygame.event.get()
+    for event in events:
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_r:
+                LOOP = record()
+            if event.key == pygame.K_SPACE:
+                RECORDING = not RECORDING
+                if RECORDING:
+                    LOOP = record()
+                    LOOPING = True
+                    playback(LOOP)
+                else:
+                    LOOPING = False
+                    # LOOP = record()
+                    
+# t = Thread(target=_thread)
+# t.daemon = True
+# t.start()
+# pygame.init()
+
 breakpoint()
 
 # With the move absolute endpoint, we can move the robot in an absolute position
