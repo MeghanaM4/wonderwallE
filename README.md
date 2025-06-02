@@ -1,5 +1,5 @@
 # WonderwallE
-The dancing, guitar-playing robot you never knew you needed.             
+The dancing, guitar-playing robot you never knew you needed. Check out the devpost [here](https://devpost.com/software/wonderwalle).     
 <br>
 <img src="wonderwalle.png" style="height: 600; width:500px;"/>
 <br>       
